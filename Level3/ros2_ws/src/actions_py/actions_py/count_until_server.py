@@ -12,7 +12,7 @@ class CountUntilServerNode(Node):
     def __init__(self):
         super().__init__("count_until_server")
         self.goal_handle_: ServerGoalHandle = None
-        self.goal_lock_ = threading.lock()
+        self.goal_lock_ = threading.Lock()
         self.count_until_server_ = ActionServer(
             self,
             CountUntil,

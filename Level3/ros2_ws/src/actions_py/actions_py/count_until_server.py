@@ -26,19 +26,29 @@ class CountUntilServerNode(Node):
     def goal_callback(self, goal_request: CountUntil.Goal):
         self.get_logger().info("Recieved a goal")
 
-        #Policy: refuse new goal if current goal still active
-        with self.goal_lock_:
-            if self.goal_handle_ is not None and self.goal_handle_.is_active:
-                self.get_logger().info("Goal is already active")
-                return GoalResponse.REJECT
+        # #Policy: refuse new goal if current goal still active
+        # with self.goal_lock_:
+        #     if self.goal_handle_ is not None and self.goal_handle_.is_active:
+        #         self.get_logger().info("Goal is already active")
+        #         return GoalResponse.REJECT
 
         # Validate the goal request
         if goal_request.target_number <= 0:
             self.get_logger().info("Rejecting the goal")
             return GoalResponse.REJECT
-        else: 
-            self.get_logger().info("Accepting the goal")
-            return GoalResponse.ACCEPT
+        
+        # Policy: prempt existing goal when recieving new goal
+        with self.goal_lock_:
+            if self.goal_handle_ is not None and self.goal_handle_.is_active:
+                self.get_logger().info("Abort current goal and accept new goal")
+                # Makes the goal inactive
+                self.goal_handle_.abort()
+
+                return GoalResponse.ACCEPT
+
+        
+        self.get_logger().info("Accepting the goal")
+        return GoalResponse.ACCEPT
     
 
     def execute_callback(self, goal_handle: ServerGoalHandle):
@@ -56,6 +66,11 @@ class CountUntilServerNode(Node):
         result = CountUntil.Result()
         counter = 0
         for i in range(target_number):
+            # We always have to return a result in execute_callback and here we abort before done
+            # Here is_active becomes false when aborted. That can be used to abort
+            if not goal_handle.is_active:
+                result.reached_number = counter
+                return result
             if goal_handle.is_cancel_requested:
                 self.get_logger().info("Cancelling the goal")
                 goal_handle.canceled()

@@ -4,6 +4,8 @@ from rclpy.node import Node
 from rclpy.action import ActionServer, GoalResponse, CancelResponse
 from rclpy.action.server import ServerGoalHandle
 from my_robot_interfaces.action import CountUntil
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 class CountUntilServerNode(Node):
     def __init__(self):
@@ -14,7 +16,8 @@ class CountUntilServerNode(Node):
             "count_until",
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
-            execute_callback=self.execute_callback)
+            execute_callback=self.execute_callback,
+            callback_group=ReentrantCallbackGroup())
         self.get_logger().info("Action server has been started")
 
     def goal_callback(self, goal_request: CountUntil.Goal):
@@ -63,7 +66,7 @@ class CountUntilServerNode(Node):
 def main(args=None):
         rclpy.init(args=args)
         node = CountUntilServerNode()
-        rclpy.spin(node)
+        rclpy.spin(node, MultiThreadedExecutor())
         rclpy.shutdown()
         
 if __name__ == "__main__":

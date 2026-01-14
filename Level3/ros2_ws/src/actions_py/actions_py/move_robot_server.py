@@ -1,102 +1,99 @@
-import rclpy
 import time
+import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer, GoalResponse, CancelResponse
 from rclpy.action.server import ServerGoalHandle
-from my_robot_interfaces.action import CountUntil
+from my_robot_interfaces.action import MoveRobot
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.callback_groups import ReentrantCallbackGroup
 import threading
 
-class CountUntilServerNode(Node):
+class MoveRobotServerNode(Node):
     def __init__(self):
-        super().__init__("count_until_server")
+        super().__init__("move_robot_server")
         self.goal_handle_: ServerGoalHandle = None
         self.goal_lock_ = threading.Lock()
+        self.position = 50
         self.count_until_server_ = ActionServer(
             self,
-            CountUntil,
-            "count_until",
+            MoveRobot,
+            "move_robot",
             goal_callback=self.goal_callback,
             cancel_callback=self.cancel_callback,
             execute_callback=self.execute_callback,
-            callback_group=ReentrantCallbackGroup())
+            callback_group=ReentrantCallbackGroup()
+        )
         self.get_logger().info("Action server has been started")
 
-    def goal_callback(self, goal_request: CountUntil.Goal):
+    def goal_callback(self, goal_request: MoveRobot.Goal):
         self.get_logger().info("Recieved a goal")
+        target_position = goal_request.position
 
-        # #Policy: refuse new goal if current goal still active
-        # with self.goal_lock_:
-        #     if self.goal_handle_ is not None and self.goal_handle_.is_active:
-        #         self.get_logger().info("Goal is already active")
-        #         return GoalResponse.REJECT
-
-        # Validate the goal request
-        if goal_request.target_number <= 0:
-            self.get_logger().info("Rejecting the goal")
+        if target_position > 100 or target_position < 0:
+            self.get_logger().warn("Rejecting the goal")
             return GoalResponse.REJECT
-        
-        # Policy: prempt existing goal when recieving new goal
+
         with self.goal_lock_:
             if self.goal_handle_ is not None and self.goal_handle_.is_active:
                 self.get_logger().info("Abort current goal and accept new goal")
-                # Makes the goal inactive
                 self.goal_handle_.abort()
-
                 return GoalResponse.ACCEPT
-
-        
-        self.get_logger().info("Accepting the goal")
         return GoalResponse.ACCEPT
     
 
     def execute_callback(self, goal_handle: ServerGoalHandle):
         with self.goal_lock_:
             self.goal_handle_ = goal_handle
-
-        # self.goal_handle_ = goal_handle
-        # Get request
-        target_number = goal_handle.request.target_number
-        period = goal_handle.request.period
-
-        # Execute action
+        
         self.get_logger().info("Executing the goal")
-        feedback = CountUntil.Feedback()
-        result = CountUntil.Result()
-        counter = 0
-        for i in range(target_number):
-            # We always have to return a result in execute_callback and here we abort before done
-            # Here is_active becomes false when aborted. That can be used to abort
-            if not goal_handle.is_active:
-                result.reached_number = counter
+        feedback = MoveRobot.Feedback()
+        result = MoveRobot.Result()
+        target_position = goal_handle.request.position
+        velocity = goal_handle.request.velocity
+
+        # Perform execution 
+        while self.position < target_position and self.position + velocity <= target_position:
+            if goal_handle.is_cancel_requested or not goal_handle.is_active:
+                self.get_logger().info("Cancelling the goal")
+                goal_handle.canceled()
+                result.position = self.position
+                result.message = "Failed"
                 return result
+            self.position += velocity
+            feedback.current_position = self.position
+            goal_handle.publish_feedback(feedback)
+            self.get_logger().info("Moved " + str(velocity) + " distance" )
+            time.sleep(1)
+        diff = target_position - self.position
+        if diff > 0:
             if goal_handle.is_cancel_requested:
                 self.get_logger().info("Cancelling the goal")
                 goal_handle.canceled()
-                result.reached_number = counter
+                result.position = self.position
+                result.message = "Failed"
                 return result
-            counter += 1
-            self.get_logger().info(str(counter))
-            feedback.current_number = counter
+            self.position = target_position
+            feedback.current_position = self.position
             goal_handle.publish_feedback(feedback)
-            time.sleep(period)
-        # Set goal final state
-        goal_handle.succeed()
-        # Send result 
-        result.reached_number = counter
-        return result
+            self.get_logger().info("Moved " + str(diff) + " distance")
 
+        goal_handle.succeed()
+        result.position = self.position
+        result.message = "Succeeded"
+        return result
+    
     def cancel_callback(self, goal_handle: ServerGoalHandle):
         self.get_logger().info("Recieved a cancel request")
         return CancelResponse.ACCEPT
 
-    
+        
 def main(args=None):
         rclpy.init(args=args)
-        node = CountUntilServerNode()
+        node = MoveRobotServerNode()
         rclpy.spin(node, MultiThreadedExecutor())
         rclpy.shutdown()
         
 if __name__ == "__main__":
     main()
+
+

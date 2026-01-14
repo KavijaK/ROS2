@@ -41,6 +41,13 @@ class NumberPublisherNode(LifecycleNode):
         self.destroy_timer(self.number_timer_)
         return TransitionCallbackReturn.SUCCESS
     
+    def on_error(self, previous_state):
+        self.get_logger().info("IN on error")
+        self.destroy_lifecycle_publisher(self.number_publisher_)
+        self.destroy_timer(self.number_timer_)
+        # DO some checks, if ok then return success else return failure
+        return TransitionCallbackReturn.SUCCESS
+    
     def publish_number(self):
         msg = Int64()
         msg.data = self.number_
